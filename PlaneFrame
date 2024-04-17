@@ -1,0 +1,331 @@
+""
+Created on Sun Apr 14 20:14:04 2024
+
+@author: MSc Carlos Magalhaes Jr
+carlosmagalhaes.eng@gmail.com
+https://www.linkedin.com/in/carlos-moacyr-andrade-jr-5b6964a0/
+
+"""
+
+import numpy as np
+import math
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy
+from scipy.linalg import eig
+
+
+
+Kel = np.zeros((6,6))
+Tel = np.zeros((6,6))
+
+
+
+Ag = 1000
+Iz = 2420
+E = 29000
+mass = 100
+
+
+
+h = 12*12
+
+
+nt = 8
+nbars = 8
+
+K = np.zeros((3*nt,3*nt))
+M = np.zeros((3*nt,3*nt))
+
+F = np.zeros(3*nt)
+d = np.zeros(3*nt)
+dmodal = np.zeros(3*nt)
+
+inode = [0,2,3,1,2,5,6,4]
+fnode = [2,3,4,4,5,6,7,7]
+
+F[3*2] = 100
+F[3*4] = 100
+
+M[3*3,3*3] = 2*mass
+M[6*3,6*3] = mass
+
+
+
+Y = np.array([0,2*h,0,h,2*h,0,h,2*h])
+Z = np.array([0,0,h,h,h,2*h,2*h,2*h])
+L = np.zeros(nbars)
+I = np.array([2,2,2,2,1,1,1,1])*Iz
+A = np.array([1,1,1,1,1,1,1,1])*Ag
+
+            
+for i in range(nbars):
+    L[i]=( (Y[fnode[i]]-Y[inode[i]])**2     +(Z[fnode[i]]-Z[inode[i]])**2 )**0.5
+
+
+def Rotation(i):
+    global L
+    Le=L[i]
+    
+    deltaY= Y[fnode[i]]-Y[inode[i]]
+    deltaZ= Z[fnode[i]]-Z[inode[i]]
+    
+    R = np.zeros((6,6))
+    
+    R[0,0] = deltaY/Le
+    R[0,1] = deltaZ/Le
+    R[1,0] = -deltaZ/Le
+    R[1,1] = deltaY/Le
+    R[2,2] = 1
+    R[3,3] = deltaY/Le
+    R[3,4] = deltaZ/Le
+    R[4,3] = -deltaZ/Le
+    R[4,4] = deltaY/Le
+    R[5,5] = 1
+    
+    return R
+
+
+def Klocal(A,I,L):
+    Kel=np.array([[A*E/L,0,0,-A*E/L,0,0],
+                  [0,12*E*I/L**3,6*E*I/L**2,0,-12*E*I/L**3,6*E*I/L**2],
+                  [0,6*E*I/L**2,4*E*I/L,0,-6*E*I/L**2,2*E*I/L],
+                  [-A*E/L,0,0,A*E/L,0,0],
+                  [0,-12*E*I/L**3,-6*E*I/L**2,0,12*E*I/L**3,-6*E*I/L**2],
+                  [0,6*E*I/L**2,2*E*I/L,0,-6*E*I/L**2,4*E*I/L]])
+    return Kel
+
+def Boolean(k):
+    global nt
+    global inode
+    global fnode
+    
+    
+    Bool = np.zeros((3*nt,6))
+    for i in range (3*nt):
+        if i == inode[k]:
+            Bool[3*i][0]=1
+            Bool[3*i+1][1]=1
+            Bool[3*i+2][2]=1
+        if i == fnode[k]:
+            Bool[3*i][3]=1
+            Bool[3*i+1][4]=1
+            Bool[3*i+2][5]=1
+            
+    return Bool
+
+def Interpolation(xvar,Le):
+    N1 = 1-3*xvar**2/Le**2 +2*xvar**3/Le**3
+    N2 = xvar-2*xvar**2/Le + xvar**3/Le**2
+    N3 = 3*xvar**2/Le**2-2*xvar**3/Le**3
+    N4 = -xvar**2/Le+xvar**3/Le**2
+    N5 = (Le-xvar)/Le
+    N6 = xvar/Le
+    Nmatrix = np.array([[N5,0,0,N6,0,0],
+                        [0,N1,N2,0,N3,N4]])
+
+    return Nmatrix
+
+
+
+# plt.scatter(Y, Z)
+# plt.axis('equal')
+# plt.show()
+
+# KelLeft = np.matmul(Rotation(0),Klocal(300,300,L[0]))
+# KelLeft2 = Rotation(0)*Klocal(300,300,L[0])
+
+# print(KelLeft - KelLeft2)
+# Kel = np.matmul(KelLeft,Rotation(0))
+    
+# print(Boolean(0).shape)
+# print(Kel.shape)
+
+
+# print(Boolean(0)*Kel)
+    
+for i in range(nbars):
+    KelLeft = np.matmul(np.transpose(Rotation(i)),Klocal(A[i],I[i],L[i]))
+    Kel = np.matmul(KelLeft,Rotation(i))
+    
+    KelgLeft = np.matmul(Boolean(i),Kel)
+    Kelg = np.matmul(KelgLeft,np.transpose(Boolean(i)))
+
+    K = K + Kelg
+        
+ne = 10
+
+dreduced = np.linalg.solve(K[6:,6:],F[6:]) 
+
+Kreduced = K[6:,6:]
+scale = 100
+
+d[6:] = scale*dreduced
+
+Ynew = np.zeros(nt)
+Znew = np.zeros(nt)
+
+for i in range(nt):
+    Ynew[i] = Y[i]+d[3*i]
+    Znew[i] = Z[i]+d[3*i+1]
+
+
+Yplot=np.zeros(ne+1)
+Zplot=np.zeros(ne+1)
+Yundeformed=np.zeros(ne+1)
+Zundeformed=np.zeros(ne+1)
+
+T = np.zeros((2,2))
+
+
+
+Bar = 4
+
+M1 = np.matmul(np.transpose(Boolean(Bar)),d)
+M2 = np.matmul(Rotation(Bar),M1)
+M3 = np.matmul(Interpolation((ne)*L[Bar]/ne,L[Bar]),M2)
+
+
+for j in range(2):
+    for k in range(2):
+        T[j,k] = Rotation(3)[j,k]
+        
+M4 = np.matmul(np.transpose(T),M3)
+
+
+# print(M1)
+# print(M2)
+# print(M3)
+# print(M4)
+# print(Interpolation(244,244))
+
+for j in range(2):
+    for k in range(2):
+        T[j,k] = Rotation(i)[j,k]
+
+for l in range(ne+1):
+    M1 = np.matmul(np.transpose(Boolean(Bar)),d)
+    M2 = np.matmul(Rotation(Bar),M1)
+    M3 = np.matmul(Interpolation(l*L[Bar]/ne,L[Bar]),M2)
+    
+    VW = np.matmul(np.transpose(T),M3)
+    Yplot[l] = Y[inode[Bar]]+l/ne*(Y[fnode[Bar]]-Y[inode[Bar]])+VW[0]
+    Zplot[l] = Z[inode[Bar]]+l/ne*(Z[fnode[Bar]]-Z[inode[Bar]])+VW[1]
+
+plt.plot(Yplot,Zplot,'k')
+    
+for i in range(nbars):
+    for j in range(2):
+        for k in range(2):
+            T[j,k] = Rotation(i)[j,k]
+
+    for l in range(ne+1):
+        M1 = np.matmul(np.transpose(Boolean(i)),d)
+        M2 = np.matmul(Rotation(i),M1)
+        M3 = np.matmul(Interpolation(l*L[i]/ne,L[i]),M2)
+        
+        VW = np.matmul(np.transpose(T),M3)
+        Yplot[l] = Y[inode[i]]+l/ne*(Y[fnode[i]]-Y[inode[i]])+VW[0]
+        Zplot[l] = Z[inode[i]]+l/ne*(Z[fnode[i]]-Z[inode[i]])+VW[1]
+        
+        Yundeformed[l] = Y[inode[i]]+l/ne*(Y[fnode[i]]-Y[inode[i]])
+        Zundeformed[l] = Z[inode[i]]+l/ne*(Z[fnode[i]]-Z[inode[i]])
+    
+    
+    plt.plot(Yplot,Zplot,'k',linewidth=2.5)
+    plt.plot(Yundeformed,Zundeformed,'k--')
+    
+
+plt.axis('equal')
+
+# plt.plot(Y,Z,'ro')
+# plt.plot(Ynew,Znew,'bo')
+# font = {'family': 'serif',
+#         'weight': 'normal',
+#         'size': 16,
+#         }
+
+
+
+
+plt.axis('off')
+
+plt.show()
+
+
+"Eigenvalues"
+
+eigvals, eigvecs = scipy.linalg.eig(K[6:,6:], -M[6:,6:])
+
+Ynew = np.zeros(nt)
+Znew = np.zeros(nt)
+
+
+
+# np.linalg.eigvals(K[6:,6:])
+
+print(eigvals[1])
+
+dmodal[6:] = scale*eigvecs[:,1]
+
+for i in range(nt):
+    Ynew[i] = Y[i]+dmodal[3*i]
+    Znew[i] = Z[i]+dmodal[3*i+1]
+
+
+Yplot=np.zeros(ne+1)
+Zplot=np.zeros(ne+1)
+
+T = np.zeros((2,2))
+
+
+for j in range(2):
+    for k in range(2):
+        T[j,k] = Rotation(i)[j,k]
+
+for l in range(ne+1):
+    M1 = np.matmul(np.transpose(Boolean(Bar)),dmodal)
+    M2 = np.matmul(Rotation(Bar),M1)
+    M3 = np.matmul(Interpolation(l*L[Bar]/ne,L[Bar]),M2)
+    
+    VW = np.matmul(np.transpose(T),M3)
+    Yplot[l] = Y[inode[Bar]]+l/ne*(Y[fnode[Bar]]-Y[inode[Bar]])+VW[0]
+    Zplot[l] = Z[inode[Bar]]+l/ne*(Z[fnode[Bar]]-Z[inode[Bar]])+VW[1]
+
+plt.plot(Yplot,Zplot,'k')
+    
+for i in range(nbars):
+    for j in range(2):
+        for k in range(2):
+            T[j,k] = Rotation(i)[j,k]
+
+    for l in range(ne+1):
+        M1 = np.matmul(np.transpose(Boolean(i)),dmodal)
+        M2 = np.matmul(Rotation(i),M1)
+        M3 = np.matmul(Interpolation(l*L[i]/ne,L[i]),M2)
+        
+        VW = np.matmul(np.transpose(T),M3)
+        Yplot[l] = Y[inode[i]]+l/ne*(Y[fnode[i]]-Y[inode[i]])+VW[0]
+        Zplot[l] = Z[inode[i]]+l/ne*(Z[fnode[i]]-Z[inode[i]])+VW[1]
+
+        Yundeformed[l] = Y[inode[i]]+l/ne*(Y[fnode[i]]-Y[inode[i]])
+        Zundeformed[l] = Z[inode[i]]+l/ne*(Z[fnode[i]]-Z[inode[i]])
+        
+    plt.plot(Yplot,Zplot,'k',linewidth=2.5)
+    plt.plot(Yundeformed,Zundeformed,'k--')
+
+plt.axis('equal')
+
+# plt.plot(Y,Z,'ro')
+# plt.plot(Ynew,Znew,'bo')
+# font = {'family': 'serif',
+#         'weight': 'normal',
+#         'size': 16,
+#         }
+
+
+
+
+plt.axis('off')
+
+plt.show()
